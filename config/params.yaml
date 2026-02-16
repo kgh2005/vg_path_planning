@@ -1,15 +1,19 @@
 vg_rviz:
   ros__parameters:
-    frame_id: "map"
+    frame_id: map
     field_width: 20.0
     field_height: 14.0
-    obstacle_radius: 0.30
 
-    initialpose_topic: "/initialpose"
-    goal_topic: "/goal_pose"
-    obstacle_topic: "/clicked_point"
+    obstacle_radius: 0.30      # R (m)
+    # merge_margin: 0.05         # margin (m)  <-- 추가! (2R+margin 이내면 1개로 합침)
 
-    markers_topic: "/vg/markers"
-    path_topic: "/vg/path"
+    obstacle_merge_dist: 0.60
 
     square: 8
+
+    initialpose_topic: /initialpose
+    goal_topic: /goal_pose
+    obstacle_topic: /clicked_point
+
+    markers_topic: /vg/markers
+    path_topic: /vg/path

@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Status1
         - /MarkerArray1
+        - /Path1
       Splitter Ratio: 0.5
     Tree Height: 644
   - Class: rviz_common/Selection
@@ -53,8 +54,11 @@ Visualization Manager:
       Name: MarkerArray
       Namespaces:
         goal: true
-        obstacles: true
+        ground: true
+        obstacles_poly: true
         robot: true
+        vg_edges: true
+        vg_nodes: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -65,13 +69,13 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
-      Color: 25; 255; 0
+      Color: 198; 70; 0
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
+      Line Style: Billboards
+      Line Width: 0.05000000074505806
       Name: Path
       Offset:
         X: 0
@@ -136,16 +140,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 9.010074615478516
+      Distance: 3.945345401763916
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 1.1438220739364624
+        Y: 1.6385148763656616
+        Z: -0.08258907496929169
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -154,7 +158,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.6353976726531982
+      Yaw: 1.8303951025009155
     Saved: ~
 Window Geometry:
   Displays:
@@ -172,5 +176,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1920
-  X: 579
-  Y: 216
+  X: 520
+  Y: 223
