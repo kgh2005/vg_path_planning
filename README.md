@@ -10,6 +10,7 @@ A ROS 2 (Humble) playground to prototype **Visibility Graph (VG)** path planning
 | **ROS** | Humble Hawksbill |
 
 ## Tree
+```bash
 vg_path_planning/
 ├── config/
 │   ├── rviz.rviz
@@ -28,3 +29,4 @@ vg_path_planning/
     ├── obstacles.py
     ├── shortest_path.py
     └── visibility_graph.py
+```
