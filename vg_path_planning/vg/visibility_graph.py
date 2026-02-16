@@ -22,7 +22,7 @@ def build_vg_nodes_from_polys(
     polys: List[List[XY]],
 ) -> Optional[VGData]:
     """
-    ✅ 폴리곤을 직접 받아서 VG 노드 리스트 구성
+    폴리곤을 직접 받아서 VG 노드 리스트 구성
     (start, goal, 그 다음 모든 polygon vertices)
     """
     if robot_xy is None or goal_xy is None:
