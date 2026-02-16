@@ -28,7 +28,6 @@ class VgRvizNode(Node):
         self.declare_parameter("field_height", 14.0)    # meters
         self.declare_parameter("obstacle_radius", 0.30) # meters
 
-        # 가까우면 같은 클러스터(같은 장애물 덩어리)
         self.declare_parameter("obstacle_merge_dist", 0.60)
 
         self.declare_parameter("initialpose_topic", "/initialpose")
@@ -41,11 +40,19 @@ class VgRvizNode(Node):
         # polygon sampling count
         self.declare_parameter("square", 8)
 
+        # display toggles (YAML)
+        self.declare_parameter("show_ground", True)
+        self.declare_parameter("show_obstacles_circle", True)
+        self.declare_parameter("show_obstacles_poly", True)
+        self.declare_parameter("show_vg_nodes", False)
+        self.declare_parameter("show_vg_edges", False)
+
+        # ---- cached params ----
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.field_width = float(self.get_parameter("field_width").value)
         self.field_height = float(self.get_parameter("field_height").value)
-        self.square = int(self.get_parameter("square").value)
 
+        self.square = int(self.get_parameter("square").value)
         self.merge_dist = float(self.get_parameter("obstacle_merge_dist").value)
 
         radius = float(self.get_parameter("obstacle_radius").value)
@@ -92,23 +99,19 @@ class VgRvizNode(Node):
         # publish markers periodically
         self.create_timer(0.1, self._publish_markers)
 
-        self.get_logger().info("[vg_rviz] ready (RViz tools: /initialpose, /goal_pose, /clicked_point)")
+        self.get_logger().info(
+            f"[vg_rviz] ready | R={radius:.2f} merge_dist={self.merge_dist:.2f} square={self.square}"
+        )
 
     # -------- input callbacks --------
     def _cb_initialpose(self, msg: PoseWithCovarianceStamped):
-        x = msg.pose.pose.position.x
-        y = msg.pose.pose.position.y
-        self.fsm.set_robot(x, y)
+        self.fsm.set_robot(msg.pose.pose.position.x, msg.pose.pose.position.y)
 
     def _cb_goal(self, msg: PoseStamped):
-        x = msg.pose.position.x
-        y = msg.pose.position.y
-        self.fsm.set_goal(x, y)
+        self.fsm.set_goal(msg.pose.position.x, msg.pose.position.y)
 
     def _cb_obstacle(self, msg: PointStamped):
-        x = msg.point.x
-        y = msg.point.y
-        self.fsm.add_obstacle(x, y)
+        self.fsm.add_obstacle(msg.point.x, msg.point.y)
 
     # -------- planner result --------
     def _on_path(self, path_xy):
@@ -139,6 +142,13 @@ class VgRvizNode(Node):
         now = self.get_clock().now().to_msg()
         ma = MarkerArray()
 
+        # 토글은 매 tick 읽기(재시작 없이 파라미터 바꾸는 경우도 대응)
+        show_ground = bool(self.get_parameter("show_ground").value)
+        show_circle = bool(self.get_parameter("show_obstacles_circle").value)
+        show_poly = bool(self.get_parameter("show_obstacles_poly").value)
+        show_nodes = bool(self.get_parameter("show_vg_nodes").value)
+        show_edges = bool(self.get_parameter("show_vg_edges").value)
+
         # ---- 0) RViz 잔상 제거 ----
         clear = Marker()
         clear.header.frame_id = self.frame_id
@@ -146,24 +156,7 @@ class VgRvizNode(Node):
         clear.action = Marker.DELETEALL
         ma.markers.append(clear)
 
-        # ---- 1) clickable ground plane ----
-        ground = Marker()
-        ground.header.frame_id = self.frame_id
-        ground.header.stamp = now
-        ground.ns = "ground"
-        ground.id = 0
-        ground.type = Marker.CUBE
-        ground.action = Marker.ADD
-        ground.pose.position.x = 0.0
-        ground.pose.position.y = 0.0
-        ground.pose.position.z = -0.01
-        ground.pose.orientation.w = 1.0
-        ground.scale.x = float(self.field_width)
-        ground.scale.y = float(self.field_height)
-        ground.scale.z = 0.02
-        ground.color.r, ground.color.g, ground.color.b, ground.color.a = (0.4, 0.8, 0.4, 0.25)
-        ma.markers.append(ground)
-
+        # ---- helper: sphere ----
         def sphere(ns, mid, x, y, scale, rgba):
             m = Marker()
             m.header.frame_id = self.frame_id
@@ -180,6 +173,25 @@ class VgRvizNode(Node):
             m.color.r, m.color.g, m.color.b, m.color.a = rgba
             return m
 
+        # ---- 1) ground ----
+        if show_ground:
+            ground = Marker()
+            ground.header.frame_id = self.frame_id
+            ground.header.stamp = now
+            ground.ns = "ground"
+            ground.id = 0
+            ground.type = Marker.CUBE
+            ground.action = Marker.ADD
+            ground.pose.position.x = 0.0
+            ground.pose.position.y = 0.0
+            ground.pose.position.z = -0.01
+            ground.pose.orientation.w = 1.0
+            ground.scale.x = float(self.field_width)
+            ground.scale.y = float(self.field_height)
+            ground.scale.z = 0.02
+            ground.color.r, ground.color.g, ground.color.b, ground.color.a = (0.4, 0.8, 0.4, 0.25)
+            ma.markers.append(ground)
+
         # ---- 2) robot / goal ----
         if self.state.robot_xy is not None:
             x, y = self.state.robot_xy
@@ -189,46 +201,66 @@ class VgRvizNode(Node):
             x, y = self.state.goal_xy
             ma.markers.append(sphere("goal", 0, x, y, 0.18, (0.9, 0.2, 0.2, 1.0)))
 
-        # ---- 3) obstacles: raw centers -> merged hull polygons(2개 범위 커버) ----
+        # ---- 3) obstacles ----
         r = float(self.state.obstacle_radius)
 
+        # (A) raw circles (옵션)
+        if show_circle:
+            for i, (cx, cy) in enumerate(self.state.obstacles_xy):
+                circ = Marker()
+                circ.header.frame_id = self.frame_id
+                circ.header.stamp = now
+                circ.ns = "obstacles_circle_raw"
+                circ.id = i
+                circ.type = Marker.CYLINDER
+                circ.action = Marker.ADD
+                circ.pose.position.x = float(cx)
+                circ.pose.position.y = float(cy)
+                circ.pose.position.z = 0.0
+                circ.pose.orientation.w = 1.0
+                circ.scale.x = circ.scale.y = float(2.0 * r)
+                circ.scale.z = 0.04
+                circ.color.r, circ.color.g, circ.color.b, circ.color.a = (0.2, 0.4, 1.0, 0.12)
+                ma.markers.append(circ)
+
+        # (B) merged hull polygons (2개 범위 커버용)  obstacle_merge_dist 사용
         polys = merged_obstacles_as_hulls(
             self.state.obstacles_xy,
             radius=r,
-            n_vertices=self.square,      # 원을 n각형으로 샘플링
-            merge_dist=self.merge_dist,  # 이 거리 이내면 같은 덩어리
+            n_vertices=self.square,
+            merge_dist=self.merge_dist,
         )
 
-        for i, poly in enumerate(polys):
-            # polygon outline만 그리기 (센터/원으로 합치지 않음)
-            poly_m = Marker()
-            poly_m.header.frame_id = self.frame_id
-            poly_m.header.stamp = now
-            poly_m.ns = "obstacles_poly"
-            poly_m.id = i
-            poly_m.type = Marker.LINE_STRIP
-            poly_m.action = Marker.ADD
-            poly_m.scale.x = 0.03
-            poly_m.color.r, poly_m.color.g, poly_m.color.b, poly_m.color.a = (0.1, 0.2, 1.0, 0.95)
+        if show_poly:
+            for i, poly in enumerate(polys):
+                poly_m = Marker()
+                poly_m.header.frame_id = self.frame_id
+                poly_m.header.stamp = now
+                poly_m.ns = "obstacles_poly"
+                poly_m.id = i
+                poly_m.type = Marker.LINE_STRIP
+                poly_m.action = Marker.ADD
+                poly_m.scale.x = 0.03
+                poly_m.color.r, poly_m.color.g, poly_m.color.b, poly_m.color.a = (0.1, 0.2, 1.0, 0.95)
 
-            for (x, y) in poly:
-                p = Point()
-                p.x = float(x)
-                p.y = float(y)
-                p.z = 0.02
-                poly_m.points.append(p)
+                for (x, y) in poly:
+                    p = Point()
+                    p.x = float(x)
+                    p.y = float(y)
+                    p.z = 0.02
+                    poly_m.points.append(p)
 
-            if poly:
-                x0, y0 = poly[0]
-                p0 = Point()
-                p0.x = float(x0)
-                p0.y = float(y0)
-                p0.z = 0.02
-                poly_m.points.append(p0)
+                if poly:
+                    x0, y0 = poly[0]
+                    p0 = Point()
+                    p0.x = float(x0)
+                    p0.y = float(y0)
+                    p0.z = 0.02
+                    poly_m.points.append(p0)
 
-            ma.markers.append(poly_m)
+                ma.markers.append(poly_m)
 
-        # ---- 4) VG nodes/edges/path (using merged polygons) ----
+        # ---- 4) VG nodes/edges/path ----
         vg = build_vg_nodes_from_polys(
             self.state.robot_xy,
             self.state.goal_xy,
@@ -236,57 +268,48 @@ class VgRvizNode(Node):
         )
 
         if vg is not None:
-            # nodes
-            pts = Marker()
-            pts.header.frame_id = self.frame_id
-            pts.header.stamp = now
-            pts.ns = "vg_nodes"
-            pts.id = 0
-            pts.type = Marker.SPHERE_LIST
-            pts.action = Marker.ADD
-            pts.scale.x = pts.scale.y = pts.scale.z = 0.06
-            pts.color.r, pts.color.g, pts.color.b, pts.color.a = (1.0, 0.9, 0.1, 1.0)
-
-            for (x, y) in vg.nodes:
-                p = Point()
-                p.x = float(x)
-                p.y = float(y)
-                p.z = 0.04
-                pts.points.append(p)
-
-            ma.markers.append(pts)
-
-            # edges
             edges = build_vg_edges(vg)
 
-            edge_m = Marker()
-            edge_m.header.frame_id = self.frame_id
-            edge_m.header.stamp = now
-            edge_m.ns = "vg_edges"
-            edge_m.id = 0
-            edge_m.type = Marker.LINE_LIST
-            edge_m.action = Marker.ADD
-            edge_m.scale.x = 0.01
-            edge_m.color.r, edge_m.color.g, edge_m.color.b, edge_m.color.a = (1.0, 1.0, 0.0, 0.35)
+            if show_nodes:
+                pts = Marker()
+                pts.header.frame_id = self.frame_id
+                pts.header.stamp = now
+                pts.ns = "vg_nodes"
+                pts.id = 0
+                pts.type = Marker.SPHERE_LIST
+                pts.action = Marker.ADD
+                pts.scale.x = pts.scale.y = pts.scale.z = 0.06
+                pts.color.r, pts.color.g, pts.color.b, pts.color.a = (1.0, 0.9, 0.1, 1.0)
 
-            for (i, j) in edges:
-                ax, ay = vg.nodes[i]
-                bx, by = vg.nodes[j]
+                for (x, y) in vg.nodes:
+                    p = Point()
+                    p.x = float(x)
+                    p.y = float(y)
+                    p.z = 0.04
+                    pts.points.append(p)
 
-                pa = Point()
-                pa.x = float(ax)
-                pa.y = float(ay)
-                pa.z = 0.03
+                ma.markers.append(pts)
 
-                pb = Point()
-                pb.x = float(bx)
-                pb.y = float(by)
-                pb.z = 0.03
+            if show_edges:
+                edge_m = Marker()
+                edge_m.header.frame_id = self.frame_id
+                edge_m.header.stamp = now
+                edge_m.ns = "vg_edges"
+                edge_m.id = 0
+                edge_m.type = Marker.LINE_LIST
+                edge_m.action = Marker.ADD
+                edge_m.scale.x = 0.01
+                edge_m.color.r, edge_m.color.g, edge_m.color.b, edge_m.color.a = (1.0, 1.0, 0.0, 0.35)
 
-                edge_m.points.append(pa)
-                edge_m.points.append(pb)
+                for (i, j) in edges:
+                    ax, ay = vg.nodes[i]
+                    bx, by = vg.nodes[j]
+                    pa = Point(); pa.x = float(ax); pa.y = float(ay); pa.z = 0.03
+                    pb = Point(); pb.x = float(bx); pb.y = float(by); pb.z = 0.03
+                    edge_m.points.append(pa)
+                    edge_m.points.append(pb)
 
-            ma.markers.append(edge_m)
+                ma.markers.append(edge_m)
 
             # path (A*)
             path_xy = build_vg_path(vg, edges)

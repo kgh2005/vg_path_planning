@@ -17,3 +17,10 @@ vg_rviz:
 
     markers_topic: /vg/markers
     path_topic: /vg/path
+
+    # --- display toggles ---
+    show_ground: true
+    show_obstacles_circle: true
+    show_obstacles_poly: true
+    show_vg_nodes: true
+    show_vg_edges: true
