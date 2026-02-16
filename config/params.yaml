@@ -1,0 +1,15 @@
+vg_rviz:
+  ros__parameters:
+    frame_id: "map"
+    field_width: 20.0
+    field_height: 14.0
+    obstacle_radius: 0.30
+
+    initialpose_topic: "/initialpose"
+    goal_topic: "/goal_pose"
+    obstacle_topic: "/clicked_point"
+
+    markers_topic: "/vg/markers"
+    path_topic: "/vg/path"
+
+    square: 8
